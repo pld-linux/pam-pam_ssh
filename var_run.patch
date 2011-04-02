@@ -1,0 +1,113 @@
+diff -Nrbu pam_ssh-1.97/pam_ssh.8 pam_ssh-1.97-OK/pam_ssh.8
+--- pam_ssh-1.97/pam_ssh.8	2008-05-12 22:57:12.000000000 +0400
++++ pam_ssh-1.97-OK/pam_ssh.8	2010-12-13 19:54:24.000000000 +0300
+@@ -148,6 +148,10 @@
+ SSH2 RSA keys
+ .It Pa $HOME/.ssh2/id_dsa_*
+ SSH2 DSA keys
++.It Pa /var/run/pam_ssh/<user>*
++ssh-agent environment information. The files are owned by the superuser but
++readable by the users. The location is Fedora specific, in the original package
++these files are in $HOME/.ssh/agent-*
+ .El
+ .Sh SEE ALSO
+ .Xr ssh-agent 1 ,
+diff -Nrbu pam_ssh-1.97/pam_ssh.c pam_ssh-1.97-OK/pam_ssh.c
+--- pam_ssh-1.97/pam_ssh.c	2008-05-12 22:57:12.000000000 +0400
++++ pam_ssh-1.97-OK/pam_ssh.c	2010-12-13 20:19:36.000000000 +0300
+@@ -114,6 +114,7 @@
+ #define PAM_OPT_NULLOK_NAME             "nullok"
+ #define SEP_KEYFILES			","
+ #define SSH_CLIENT_DIR			".ssh"
++#define STATE_DIR			"/var/run/" MODULE_NAME
+ 
+ enum {
+ #if HAVE_OPENPAM || HAVE_PAM_STRUCT_OPTIONS || !HAVE_PAM_STD_OPTION
+@@ -540,7 +541,6 @@
+ 	char env_string[BUFSIZ];	/* environment string */
+ 	char *env_value;		/* envariable value */
+ 	int env_write;			/* env file descriptor */
+-	char hname[MAXHOSTNAMELEN];	/* local hostname */
+ 	char *per_agent;		/* to store env */
+ 	char *per_session;		/* per-session filename */
+ 	const struct passwd *pwent;	/* user's passwd entry */
+@@ -583,17 +583,16 @@
+ 	 * Technique: Create an environment file containing
+ 	 * information about the agent.  Only one file is created, but
+ 	 * it may be given many names.  One name is given for the
+-	 * agent itself, agent-<host>.  Another name is given for each
+-	 * session, agent-<host>-<display> or agent-<host>-<tty>.  We
++	 * agent itself, /var/run/pam_ssh/<user>.  Another name is given
++	 * for each session, <user>-<display> or <user>-<tty>.  We
+ 	 * delete the per-session filename on session close, and when
+ 	 * the link count goes to unity on the per-agent file, we
+ 	 * delete the file and kill the agent.
+ 	 */
+ 
+-	/* the per-agent file contains just the hostname */
++	/* the per-agent file contains just the username */
+ 
+-	gethostname(hname, sizeof hname);
+-	if (asprintf(&per_agent, "%s/.ssh/agent-%s", pwent->pw_dir, hname)
++	if (asprintf(&per_agent, STATE_DIR "/%s", pwent->pw_name)
+ 	    == -1) {
+ 		pam_ssh_log(LOG_CRIT, "out of memory");
+ 		openpam_restore_cred(pamh);
+@@ -644,7 +643,12 @@
+         }
+         
+ 	if (start_agent) {
+-                if ((env_write = open(per_agent, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR)) < 0) {
++		openpam_restore_cred(pamh);
++		if (stat(STATE_DIR, &stat_buf) < 0)
++			mkdir(STATE_DIR, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
++                env_write = open(per_agent, O_CREAT | O_WRONLY, S_IRUSR | S_IRGRP | S_IROTH);
++		openpam_borrow_cred(pamh, pwent);
++                if (env_write < 0) {
+                         pam_ssh_log(LOG_ERR, "can't write to %s", per_agent);
+                         free(per_agent);
+                         openpam_restore_cred(pamh);
+@@ -880,7 +884,7 @@
+ 	for (cp = tty_nodir; (cp = strchr(cp, '/')); )
+ 		*cp = '_';
+ 
+-	if (asprintf(&per_session, "%s/.ssh/agent-%s-%s", pwent->pw_dir, hname,
++	if (asprintf(&per_session, STATE_DIR "/%s-%s", pwent->pw_name,
+ 	    tty_nodir) == -1) {
+ 		pam_ssh_log(LOG_CRIT, "out of memory");
+ 		free(tty_nodir);
+@@ -899,10 +903,10 @@
+ 		return retval;
+ 	}
+ 
++	openpam_restore_cred(pamh);
+ 	unlink(per_session);	/* remove cruft */
+ 	link(per_agent, per_session);
+ 
+-	openpam_restore_cred(pamh);
+ 	return PAM_SUCCESS;
+ }
+ 
+@@ -932,8 +936,11 @@
+ 	}
+ 
+ 	if (pam_get_data(pamh, "ssh_agent_env_session",
+-	    (const void **)(void *)&env_file) == PAM_SUCCESS && env_file)
++	    (const void **)(void *)&env_file) == PAM_SUCCESS && env_file) {
++		openpam_restore_cred(pamh);
+ 		unlink(env_file);
++		openpam_borrow_cred(pamh, pwent);
++	}
+ 
+ 	/* Retrieve per-agent filename and check link count.  If it's
+            greater than unity, other sessions are still using this
+@@ -948,7 +955,9 @@
+ 				openpam_restore_cred(pamh);
+ 				return PAM_SUCCESS;
+ 			}
++			openpam_restore_cred(pamh);
+ 			unlink(env_file);
++			openpam_borrow_cred(pamh, pwent);
+ 		}
+ 	}
+ 
