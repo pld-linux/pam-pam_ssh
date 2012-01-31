@@ -7,6 +7,7 @@ Group:		Base
 URL:		http://sourceforge.net/projects/pam-ssh/
 Source0:	http://downloads.sourceforge.net/pam-ssh/pam_ssh-%{version}.tar.bz2
 # Source0-md5:	ef114d67b4951c88a62893437f850784
+Source1:	%{name}.tmpfiles
 Patch0:		var_run.patch
 BuildRequires:	libtool
 BuildRequires:	openssh-clients
@@ -52,10 +53,14 @@ EOF
 
 %install
 rm -rf $RPM_BUILD_ROOT
-install -d $RPM_BUILD_ROOT%{_localstatedir}/run/pam_ssh
+install -d $RPM_BUILD_ROOT%{_localstatedir}/run/pam_ssh \
+	$RPM_BUILD_ROOT/usr/lib/tmpfiles.d
+
 %{__make} install \
 	INSTALL="install -p" \
 	DESTDIR=$RPM_BUILD_ROOT
+
+install %{SOURCE1} $RPM_BUILD_ROOT/usr/lib/tmpfiles.d/pam_ssh.conf
 
 %{__rm} $RPM_BUILD_ROOT/%{_lib}/security/*.la
 
@@ -68,3 +73,4 @@ rm -rf $RPM_BUILD_ROOT
 %attr(755,root,root) /%{_lib}/security/pam_ssh.so
 %{_mandir}/man8/pam_ssh.8*
 %ghost %dir %{_localstatedir}/run/pam_ssh
+/usr/lib/tmpfiles.d/pam_ssh.conf
