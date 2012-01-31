@@ -1,7 +1,7 @@
 Summary:	PAM module for use with SSH keys and ssh-agent
 Name:		pam-pam_ssh
 Version:	1.97
-Release:	1
+Release:	2
 License:	BSD
 Group:		Base
 URL:		http://sourceforge.net/projects/pam-ssh/
