@@ -27,7 +27,7 @@ environment variables are set in the session phase.
 
 %prep
 %setup -q -n pam_ssh-%{version}
-%patch0 -p1
+%patch -P0 -p1
 
 cat >>pam_ssh.sym <<EOF
 pam_sm_acct_mgmt
